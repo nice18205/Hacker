@@ -1,0 +1,5 @@
+.cert/
+__pycache__/
+server.log
+server.err
+tmp/

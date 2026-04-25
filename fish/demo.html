@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+  <title>3D 陀螺仪甩杆钓鱼</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #071313;
+      color: #f7fbf7;
+      font-family: "Trebuchet MS", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+
+    #game {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #071313;
+    }
+
+    .hud {
+      position: fixed;
+      top: max(14px, env(safe-area-inset-top));
+      left: max(14px, env(safe-area-inset-left));
+      z-index: 5;
+      display: grid;
+      gap: 8px;
+      width: min(342px, calc(100vw - 28px));
+      padding: 12px;
+      border: 1px solid rgba(247, 251, 247, 0.18);
+      border-radius: 8px;
+      background: rgba(6, 19, 20, 0.72);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+      backdrop-filter: blur(14px);
+      user-select: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+    }
+
+    .hud.is-armed {
+      border-color: rgba(244, 212, 95, 0.72);
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28), 0 0 28px rgba(244, 212, 95, 0.28);
+    }
+
+    .hud.is-bite {
+      animation: hudBite 420ms ease-out 0s 2;
+      border-color: rgba(255, 122, 89, 0.82);
+    }
+
+    .hud__top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h1 {
+      font-size: 17px;
+      line-height: 1.1;
+      letter-spacing: 0;
+      font-weight: 800;
+      color: #fff6d7;
+    }
+
+    .score {
+      min-width: 56px;
+      text-align: right;
+      color: #b9f6c9;
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .metric {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+      padding: 7px 8px;
+      border: 1px solid rgba(247, 251, 247, 0.12);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .metric span:first-child {
+      color: rgba(247, 251, 247, 0.62);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .metric span:last-child {
+      overflow: hidden;
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .status {
+      color: rgba(247, 251, 247, 0.82);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .bar {
+      position: relative;
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.10);
+    }
+
+    .bar::before {
+      position: absolute;
+      inset: 0;
+      width: calc(var(--power, 0) * 100%);
+      border-radius: inherit;
+      background: linear-gradient(90deg, #59d99b, #f4d45f 58%, #ff7a59);
+      content: "";
+      transition: width 80ms linear;
+    }
+
+    .controls {
+      position: fixed;
+      right: max(14px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+      z-index: 6;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      min-height: 42px;
+      border: 1px solid rgba(247, 251, 247, 0.20);
+      border-radius: 8px;
+      padding: 0 13px;
+      background: rgba(8, 26, 28, 0.78);
+      color: #ffffff;
+      box-shadow: 0 12px 26px rgba(0, 0, 0, 0.22);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      backdrop-filter: blur(14px);
+      cursor: pointer;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .touch-zone {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      cursor: crosshair;
+    }
+
+    .strike-flash {
+      position: fixed;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle at 50% 54%, rgba(255, 244, 186, 0.34), rgba(255, 122, 89, 0.16) 34%, transparent 68%);
+    }
+
+    .strike-flash.is-visible {
+      animation: strikeFlash 580ms ease-out;
+    }
+
+    .cast-cue {
+      position: fixed;
+      left: 50%;
+      top: 46%;
+      z-index: 7;
+      max-width: min(320px, calc(100vw - 32px));
+      padding: 10px 14px;
+      border: 1px solid rgba(255, 246, 215, 0.25);
+      border-radius: 8px;
+      background: rgba(8, 26, 28, 0.72);
+      color: #fff6d7;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+      font-size: 18px;
+      font-weight: 900;
+      text-align: center;
+      transform: translate(-50%, 14px) scale(0.96);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease, border-color 120ms ease;
+      backdrop-filter: blur(14px);
+    }
+
+    .cast-cue.is-visible {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+
+    .cast-cue.is-urgent {
+      border-color: rgba(255, 122, 89, 0.82);
+      color: #fff0d0;
+      animation: cuePulse 560ms ease-in-out infinite;
+    }
+
+    @keyframes strikeFlash {
+      0% {
+        opacity: 0;
+      }
+      24% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    @keyframes cuePulse {
+      0%,
+      100% {
+        transform: translate(-50%, 0) scale(1);
+      }
+      50% {
+        transform: translate(-50%, -2px) scale(1.035);
+      }
+    }
+
+    @keyframes hudBite {
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+      35% {
+        transform: translateY(2px);
+      }
+      65% {
+        transform: translateY(-1px);
+      }
+    }
+
+    @media (max-width: 560px) {
+      .hud {
+        width: calc(100vw - 24px);
+        left: 12px;
+        top: max(10px, env(safe-area-inset-top));
+        padding: 10px;
+      }
+
+      h1 {
+        font-size: 15px;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .metric {
+        padding: 6px;
+      }
+
+      .metric span:first-child {
+        font-size: 10px;
+      }
+
+      .metric span:last-child {
+        font-size: 12px;
+      }
+
+      .status {
+        font-size: 12px;
+      }
+
+      .controls {
+        left: 12px;
+        right: 12px;
+        justify-content: space-between;
+      }
+
+      button {
+        flex: 1;
+        min-width: 0;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" aria-label="3D 钓鱼游戏画面"></canvas>
+  <div class="touch-zone" id="touchZone" aria-hidden="true"></div>
+  <div class="strike-flash" id="strikeFlash" aria-hidden="true"></div>
+  <div class="cast-cue" id="castCue" aria-hidden="true"></div>
+
+  <section class="hud" aria-live="polite">
+    <div class="hud__top">
+      <h1>3D 甩杆钓鱼</h1>
+      <div class="score"><span id="score">0</span>分</div>
+    </div>
+    <div class="metrics">
+      <div class="metric">
+        <span>状态</span>
+        <span id="state">待机</span>
+      </div>
+      <div class="metric">
+        <span>蓄力</span>
+        <span id="power">0%</span>
+      </div>
+      <div class="metric">
+        <span>瞄准</span>
+        <span id="aim">0°</span>
+      </div>
+      <div class="metric">
+        <span>传感器</span>
+        <span id="sensor">未启用</span>
+      </div>
+      <div class="metric">
+        <span>鱼获</span>
+        <span id="catchCount">0尾</span>
+      </div>
+      <div class="metric">
+        <span>料理</span>
+        <span id="prepCount">0份</span>
+      </div>
+    </div>
+    <div class="bar" id="powerBar"></div>
+    <p class="status" id="hint">手机点击“陀螺仪”后，后仰蓄力、前甩抛竿、左右倾斜瞄准。电脑可按住画面下拉蓄力后松开。</p>
+  </section>
+
+  <div class="controls">
+    <button id="motionBtn" type="button">陀螺仪</button>
+    <button id="calibrateBtn" type="button">校准</button>
+    <button id="processBtn" type="button">处理</button>
+    <button id="resetBtn" type="button">重置</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from './vendor/three.module.js';
+
+    const canvas = document.getElementById('game');
+    const touchZone = document.getElementById('touchZone');
+    const hudEl = document.querySelector('.hud');
+    const strikeFlashEl = document.getElementById('strikeFlash');
+    const castCueEl = document.getElementById('castCue');
+    const stateEl = document.getElementById('state');
+    const powerEl = document.getElementById('power');
+    const aimEl = document.getElementById('aim');
+    const sensorEl = document.getElementById('sensor');
+    const catchCountEl = document.getElementById('catchCount');
+    const prepCountEl = document.getElementById('prepCount');
+    const scoreEl = document.getElementById('score');
+    const hintEl = document.getElementById('hint');
+    const powerBar = document.getElementById('powerBar');
+    const motionBtn = document.getElementById('motionBtn');
+    const calibrateBtn = document.getElementById('calibrateBtn');
+    const processBtn = document.getElementById('processBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const DEBUG_CANVAS_BUFFER = new URLSearchParams(window.location.search).has('debugBuffer');
+    const MOTION_ARM_POWER_MIN = 0.46;
+    const MOTION_ARM_PITCH_MIN = 18;
+    const MOTION_ARM_ACCEL_MIN = 0.62;
+    const MOTION_CAST_RATE_MIN = 310;
+    const MOTION_CAST_ACCEL_MIN = 12.4;
+    const MOTION_CAST_PITCH_RETURN_MIN = 24;
+    const MOTION_CAST_PITCH_DEEP_DROP_MIN = 32;
+    const MOTION_CAST_AGE_MIN = 460;
+    const MOTION_CAST_AGE_MAX = 1350;
+    const PROCESS_STROKE_DISTANCE = 72;
+    const PROCESS_STROKE_TIME_MAX = 760;
+
+    function getRenderPixelRatio() {
+      const mobileMax = window.innerWidth < 640 ? 1.5 : 2;
+      return Math.min(window.devicePixelRatio || 1, mobileMax);
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: DEBUG_CANVAS_BUFFER,
+      powerPreference: 'high-performance'
+    });
+    renderer.setPixelRatio(getRenderPixelRatio());
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x071313, 1);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x8fc4bd, 18, 54);
+
+    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 100);
+    camera.position.set(0, 5.2, 12.2);
+
+    const clock = new THREE.Clock();
+    const raycaster = new THREE.Raycaster();
+    const game = {
+      state: 'idle',
+      status: '待机',
+      score: 0,
+      power: 0,
+      aim: 0,
+      targetAim: 0,
+      chargeStartY: 0,
+      chargeStartX: 0,
+      pointerActive: false,
+      castCooldown: 0,
+      biteTimer: 0,
+      catchWindow: 0,
+      motionEnabled: false,
+      motionCalibrated: false,
+      baseBeta: 0,
+      baseGamma: 0,
+      currentBeta: 0,
+      currentGamma: 0,
+      baseAccel: { x: 0, y: 0, z: 0 },
+      currentAccel: { x: 0, y: 0, z: 0 },
+      orientationSamples: 0,
+      motionSamples: 0,
+      lastSensorLabelAt: 0,
+      lastMotionCast: 0,
+      motionTogglePending: false,
+      motionPhase: 'idle',
+      motionArmedAt: 0,
+      motionLiftPeak: 0,
+      motionLiftSign: 0,
+      motionAccelAxis: '',
+      motionAccelSign: 0,
+      lastArmFeedbackAt: 0,
+      lastBitePulseAt: 0,
+      cueKind: '',
+      catches: [],
+      prepared: 0,
+      processMode: false,
+      selectedCatchIndex: -1,
+      processPointerActive: false,
+      processStartX: 0,
+      processStartY: 0,
+      processStartAt: 0,
+      processExpectedDirection: 1,
+      lastProcessCutAt: 0,
+      lastCatchSummary: '',
+      fish: [],
+      ripples: [],
+      droplets: []
+    };
+
+    const bobber = {
+      position: new THREE.Vector3(0.35, 1.82, 5.75),
+      velocity: new THREE.Vector3(),
+      landed: false,
+      tugPhase: 0
+    };
+
+    const rod = {
+      base: new THREE.Vector3(-1.25, 1.12, 6.2),
+      tip: new THREE.Vector3(),
+      pull: 0
+    };
+
+    const palette = {
+      water: 0x1a7780,
+      deepWater: 0x0d4249,
+      bank: 0x4f7143,
+      sand: 0xa99364,
+      rod: 0xd0a75d,
+      line: 0xf5f2dc,
+      bobberRed: 0xe94d45,
+      bobberWhite: 0xf8f3dd,
+      fishA: 0xf28c5b,
+      fishB: 0x61d1a8,
+      fishC: 0xf3d35c
+    };
+
+    const FISH_TYPES = [
+      { id: 'carp', name: '鲤鱼', color: 0xf28c5b, finColor: 0xffd28d, rarity: 0.34, minScale: 0.86, maxScale: 1.2, cuts: 3, value: 1 },
+      { id: 'trout', name: '虹鳟', color: 0x61d1a8, finColor: 0xe8fff1, rarity: 0.25, minScale: 0.74, maxScale: 1.05, cuts: 2, value: 1 },
+      { id: 'gold', name: '金鲫', color: 0xf3d35c, finColor: 0xfff1aa, rarity: 0.18, minScale: 0.72, maxScale: 1.0, cuts: 2, value: 2 },
+      { id: 'bass', name: '青鲈', color: 0x7fb06b, finColor: 0xd8efbd, rarity: 0.15, minScale: 0.92, maxScale: 1.28, cuts: 3, value: 2 },
+      { id: 'shadow', name: '影鲶', color: 0x5c7187, finColor: 0xc8d7e8, rarity: 0.08, minScale: 1.02, maxScale: 1.44, cuts: 4, value: 3 }
+    ];
+
+    const root = new THREE.Group();
+    scene.add(root);
+    let waterMesh = null;
+    let waterNormalFrame = 0;
+    let castPreview = null;
+    let processingStation = null;
+
+    const dynamicLineMaterial = new THREE.LineBasicMaterial({
+      color: palette.line,
+      transparent: true,
+      opacity: 0.78
+    });
+    const splashMaterial = new THREE.LineBasicMaterial({
+      color: 0xdffbff,
+      transparent: true,
+      opacity: 0.72
+    });
+    const previewLineMaterial = new THREE.LineBasicMaterial({
+      color: 0xfff1a8,
+      transparent: true,
+      opacity: 0.78
+    });
+    const previewRingMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfff1a8,
+      transparent: true,
+      opacity: 0.52,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const cutMarkMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfff1a8,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false
+    });
+    const filletMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffa16c,
+      roughness: 0.58,
+      metalness: 0.02
+    });
+    const dropletMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd8fbff,
+      roughness: 0.25,
+      metalness: 0
+    });
+    const dropletGeometry = new THREE.SphereGeometry(0.035, 8, 6);
+    const lineSegmentCount = 18;
+    const linePositions = new Float32Array((lineSegmentCount + 1) * 3);
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    const previewSegmentCount = 30;
+    const previewPositions = new Float32Array((previewSegmentCount + 1) * 3);
+    const previewGeometry = new THREE.BufferGeometry();
+    previewGeometry.setAttribute('position', new THREE.BufferAttribute(previewPositions, 3));
+    const yAxis = new THREE.Vector3(0, 1, 0);
+    const cylinderMidpoint = new THREE.Vector3();
+    const cylinderDirection = new THREE.Vector3();
+    const lineCurveMid = new THREE.Vector3();
+    const handleEnd = new THREE.Vector3();
+    const cameraTarget = new THREE.Vector3();
+    const cameraDesired = new THREE.Vector3();
+
+    function createWorld() {
+      const hemi = new THREE.HemisphereLight(0xd4fff2, 0x243018, 1.9);
+      scene.add(hemi);
+
+      const sun = new THREE.DirectionalLight(0xfff0bf, 2.45);
+      sun.position.set(-7, 9, 6);
+      sun.castShadow = true;
+      const shadowMapSize = window.innerWidth < 640 ? 512 : 1024;
+      sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 32;
+      sun.shadow.camera.left = -15;
+      sun.shadow.camera.right = 15;
+      sun.shadow.camera.top = 15;
+      sun.shadow.camera.bottom = -15;
+      scene.add(sun);
+
+      const skyGeometry = new THREE.SphereGeometry(70, 32, 16);
+      const skyMaterial = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          topColor: { value: new THREE.Color(0x78b9b2) },
+          bottomColor: { value: new THREE.Color(0xffd285) },
+          offset: { value: 18 },
+          exponent: { value: 0.72 }
+        },
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 bottomColor;
+          uniform float offset;
+          uniform float exponent;
+          varying vec3 vWorldPosition;
+          void main() {
+            float h = normalize(vWorldPosition + offset).y;
+            gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+          }
+        `
+      });
+      scene.add(new THREE.Mesh(skyGeometry, skyMaterial));
+
+      const waterGeometry = new THREE.PlaneGeometry(42, 64, 44, 64);
+      waterGeometry.rotateX(-Math.PI / 2);
+      const waterMaterial = new THREE.MeshPhysicalMaterial({
+        color: palette.water,
+        roughness: 0.28,
+        metalness: 0,
+        transmission: 0,
+        thickness: 0.3,
+        transparent: true,
+        opacity: 0.84,
+        clearcoat: 0.55,
+        clearcoatRoughness: 0.22
+      });
+      const water = new THREE.Mesh(waterGeometry, waterMaterial);
+      water.name = 'water';
+      water.receiveShadow = true;
+      water.position.z = -16;
+      root.add(water);
+      waterMesh = water;
+
+      const deepGeometry = new THREE.PlaneGeometry(42, 64, 1, 1);
+      deepGeometry.rotateX(-Math.PI / 2);
+      const deep = new THREE.Mesh(
+        deepGeometry,
+        new THREE.MeshBasicMaterial({ color: palette.deepWater })
+      );
+      deep.position.set(0, -0.34, -16);
+      root.add(deep);
+
+      const bank = new THREE.Mesh(
+        new THREE.BoxGeometry(42, 0.55, 7.4),
+        new THREE.MeshStandardMaterial({ color: palette.bank, roughness: 0.9 })
+      );
+      bank.position.set(0, -0.18, 7.3);
+      bank.receiveShadow = true;
+      root.add(bank);
+
+      const shore = new THREE.Mesh(
+        new THREE.BoxGeometry(42, 0.24, 1.1),
+        new THREE.MeshStandardMaterial({ color: palette.sand, roughness: 0.86 })
+      );
+      shore.position.set(0, 0.02, 3.35);
+      shore.receiveShadow = true;
+      root.add(shore);
+
+      const deckMaterial = new THREE.MeshStandardMaterial({ color: 0x6a4e32, roughness: 0.72 });
+      for (let i = 0; i < 5; i += 1) {
+        const plank = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.12, 3.9), deckMaterial);
+        plank.position.set(-1.1 + i * 0.56, 0.22, 5.65);
+        plank.rotation.y = 0.03 * Math.sin(i);
+        plank.castShadow = true;
+        plank.receiveShadow = true;
+        root.add(plank);
+      }
+
+      const hillMaterial = new THREE.MeshStandardMaterial({ color: 0x5b7c68, roughness: 1 });
+      for (let i = 0; i < 9; i += 1) {
+        const hill = new THREE.Mesh(new THREE.ConeGeometry(2.1 + Math.random() * 2.6, 3 + Math.random() * 2.2, 5), hillMaterial);
+        hill.position.set(-18 + i * 4.8, 0.35, -35 - Math.random() * 4);
+        hill.rotation.y = Math.random() * Math.PI;
+        hill.receiveShadow = true;
+        root.add(hill);
+      }
+
+      createRod();
+      createBobber();
+      createCastPreview();
+      createProcessingStation();
+      spawnFish();
+    }
+
+    const rodMeshes = {
+      rod: new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.075, 1, 12),
+        new THREE.MeshStandardMaterial({ color: palette.rod, roughness: 0.48 })
+      ),
+      handle: new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.13, 0.52, 16),
+        new THREE.MeshStandardMaterial({ color: 0x2d2117, roughness: 0.7 })
+      ),
+      line: new THREE.Line(lineGeometry, dynamicLineMaterial)
+    };
+
+    function createRod() {
+      rodMeshes.rod.castShadow = true;
+      rodMeshes.handle.castShadow = true;
+      rodMeshes.line.frustumCulled = false;
+      root.add(rodMeshes.rod, rodMeshes.handle, rodMeshes.line);
+
+      const reel = new THREE.Mesh(
+        new THREE.TorusGeometry(0.16, 0.028, 10, 24),
+        new THREE.MeshStandardMaterial({ color: 0xf0e4c8, roughness: 0.35, metalness: 0.2 })
+      );
+      reel.name = 'reel';
+      reel.castShadow = true;
+      root.add(reel);
+      rodMeshes.reel = reel;
+    }
+
+    const bobberGroup = new THREE.Group();
+    const hookMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(0.055, 0.012, 8, 20, Math.PI * 1.45),
+      new THREE.MeshStandardMaterial({ color: 0xf4e7be, metalness: 0.55, roughness: 0.28 })
+    );
+
+    function createBobber() {
+      const red = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.56),
+        new THREE.MeshStandardMaterial({ color: palette.bobberRed, roughness: 0.38 })
+      );
+      const white = new THREE.Mesh(
+        new THREE.SphereGeometry(0.152, 24, 12, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48),
+        new THREE.MeshStandardMaterial({ color: palette.bobberWhite, roughness: 0.42 })
+      );
+      red.castShadow = true;
+      white.castShadow = true;
+      hookMesh.position.set(0, -0.25, 0.01);
+      hookMesh.rotation.set(Math.PI * 0.52, 0, Math.PI * 0.1);
+      bobberGroup.add(red, white, hookMesh);
+      root.add(bobberGroup);
+    }
+
+    function createCastPreview() {
+      const group = new THREE.Group();
+      group.visible = false;
+
+      const arc = new THREE.Line(previewGeometry, previewLineMaterial);
+      arc.frustumCulled = false;
+      group.add(arc);
+
+      const ringGeometry = new THREE.RingGeometry(0.56, 0.68, 64);
+      ringGeometry.rotateX(-Math.PI / 2);
+      const ring = new THREE.Mesh(ringGeometry, previewRingMaterial);
+      ring.position.y = 0.035;
+      group.add(ring);
+
+      root.add(group);
+      castPreview = { group, arc, ring };
+    }
+
+    function createProcessingStation() {
+      const group = new THREE.Group();
+      group.position.set(2.45, 0.43, 5.68);
+      group.visible = false;
+
+      const board = new THREE.Mesh(
+        new THREE.BoxGeometry(1.52, 0.12, 1.06),
+        new THREE.MeshStandardMaterial({ color: 0x8a633b, roughness: 0.82 })
+      );
+      board.receiveShadow = true;
+      board.castShadow = true;
+      group.add(board);
+
+      const knife = new THREE.Mesh(
+        new THREE.BoxGeometry(0.08, 0.035, 0.92),
+        new THREE.MeshStandardMaterial({ color: 0xd9e2df, roughness: 0.26, metalness: 0.55 })
+      );
+      knife.position.set(0.56, 0.12, 0.02);
+      knife.rotation.y = -0.55;
+      knife.castShadow = true;
+      group.add(knife);
+
+      const cuts = new THREE.Group();
+      group.add(cuts);
+      root.add(group);
+      processingStation = { group, board, knife, cuts };
+    }
+
+    function createFish(type, scale) {
+      const fish = new THREE.Group();
+      const material = new THREE.MeshStandardMaterial({ color: type.color, roughness: 0.52, metalness: 0.04 });
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.28, 24, 14), material);
+      body.scale.set(1.65, 0.66, 0.72);
+      body.castShadow = true;
+      fish.add(body);
+
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.21, 0.44, 3), material);
+      tail.position.x = -0.54;
+      tail.rotation.z = Math.PI / 2;
+      tail.scale.y = 1.08;
+      fish.add(tail);
+
+      const finMaterial = new THREE.MeshStandardMaterial({ color: type.finColor, roughness: 0.58 });
+      const fin = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.28, 3), finMaterial);
+      fin.position.set(0.02, 0.18, 0);
+      fin.rotation.x = Math.PI / 2;
+      fish.add(fin);
+
+      fish.scale.setScalar(scale);
+      fish.userData.type = type;
+      return fish;
+    }
+
+    function disposeObject3D(object) {
+      const geometries = new Set();
+      const materials = new Set();
+      object.traverse((child) => {
+        if (child.geometry) {
+          geometries.add(child.geometry);
+        }
+        if (child.material) {
+          const childMaterials = Array.isArray(child.material) ? child.material : [child.material];
+          for (const material of childMaterials) {
+            materials.add(material);
+          }
+        }
+      });
+      for (const geometry of geometries) {
+        geometry.dispose();
+      }
+      for (const material of materials) {
+        material.dispose();
+      }
+    }
+
+    function pickFishType() {
+      let roll = Math.random();
+      for (const type of FISH_TYPES) {
+        roll -= type.rarity;
+        if (roll <= 0) return type;
+      }
+      return FISH_TYPES[0];
+    }
+
+    function getUnprocessedCatches() {
+      return game.catches.filter((item) => !item.processed);
+    }
+
+    function updateCatchHud() {
+      const raw = getUnprocessedCatches().length;
+      const busyFishing = game.state === 'cast' || game.state === 'wait' || game.state === 'bite';
+      catchCountEl.textContent = `${raw}尾`;
+      prepCountEl.textContent = `${game.prepared}份`;
+      processBtn.textContent = game.processMode ? '退出处理' : (raw > 0 ? (busyFishing ? '鱼线忙碌' : '处理') : '无鱼获');
+      processBtn.disabled = !game.processMode && (raw === 0 || busyFishing);
+    }
+
+    function layoutCaughtFish() {
+      let visibleIndex = 0;
+      for (const item of game.catches) {
+        if (item.processed) {
+          item.mesh.visible = false;
+          continue;
+        }
+        const isSelected = game.processMode && game.selectedCatchIndex === game.catches.indexOf(item);
+        item.mesh.visible = true;
+        if (isSelected) {
+          item.mesh.position.set(2.45, 0.62, 5.68);
+          item.mesh.rotation.set(0.05, Math.PI / 2, -0.08);
+          item.mesh.scale.setScalar(item.displayScale * 1.08);
+          continue;
+        }
+
+        const col = visibleIndex % 4;
+        const row = Math.floor(visibleIndex / 4);
+        item.mesh.position.set(-2.15 + col * 0.58, 0.43 + row * 0.025, 5.05 + row * 0.42);
+        item.mesh.rotation.set(0, Math.PI / 2 + (col - 1.5) * 0.08, -0.18 + col * 0.08);
+        item.mesh.scale.setScalar(item.displayScale);
+        visibleIndex += 1;
+      }
+      updateCatchHud();
+    }
+
+    function addCaughtFish(type, scale) {
+      const displayScale = clamp(scale * 0.68, 0.55, 0.95);
+      const mesh = createFish(type, displayScale);
+      mesh.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      root.add(mesh);
+
+      const item = {
+        type,
+        mesh,
+        displayScale,
+        cuts: 0,
+        processed: false,
+        weight: Math.round((0.6 + displayScale * type.value + Math.random() * 0.9) * 10) / 10
+      };
+      game.catches.push(item);
+      layoutCaughtFish();
+      return item;
+    }
+
+    function clearCaughtFish() {
+      for (const item of game.catches) {
+        root.remove(item.mesh);
+        disposeObject3D(item.mesh);
+      }
+      game.catches = [];
+      game.prepared = 0;
+      game.selectedCatchIndex = -1;
+      game.processMode = false;
+      clearProcessMarks();
+      if (processingStation) {
+        processingStation.group.visible = false;
+      }
+      updateCatchHud();
+    }
+
+    function clearProcessMarks() {
+      if (!processingStation) return;
+      for (const child of [...processingStation.cuts.children]) {
+        processingStation.cuts.remove(child);
+        child.geometry?.dispose();
+        if (child.material && child.material !== cutMarkMaterial && child.material !== filletMaterial) {
+          child.material.dispose();
+        }
+      }
+    }
+
+    function getSelectedCatch() {
+      if (game.selectedCatchIndex < 0) return null;
+      const item = game.catches[game.selectedCatchIndex];
+      return item && !item.processed ? item : null;
+    }
+
+    function selectNextCatch() {
+      const start = Math.max(0, game.selectedCatchIndex + 1);
+      for (let i = start; i < game.catches.length; i += 1) {
+        if (!game.catches[i].processed) {
+          game.selectedCatchIndex = i;
+          return game.catches[i];
+        }
+      }
+      for (let i = 0; i < start; i += 1) {
+        if (!game.catches[i].processed) {
+          game.selectedCatchIndex = i;
+          return game.catches[i];
+        }
+      }
+      game.selectedCatchIndex = -1;
+      return null;
+    }
+
+    function getProcessDirectionLabel(direction) {
+      return direction > 0 ? '向下切' : '向上切';
+    }
+
+    function resetChargeState() {
+      game.pointerActive = false;
+      if (game.state === 'charge') {
+        game.state = 'idle';
+      }
+      game.status = '待机';
+      game.power = 0;
+      hudEl.classList.remove('is-armed');
+      setCastCue();
+    }
+
+    function syncMotionButton() {
+      if (game.motionTogglePending) {
+        motionBtn.textContent = '请求中';
+        motionBtn.disabled = true;
+        return;
+      }
+      motionBtn.disabled = false;
+      motionBtn.textContent = game.motionEnabled ? '关闭陀螺仪' : '开启陀螺仪';
+    }
+
+    function enterProcessingMode() {
+      if (game.state === 'caught') {
+        game.state = 'idle';
+        game.status = '待机';
+        resetBobber();
+      }
+
+      if (game.state === 'charge') {
+        resetChargeState();
+        resetMotionCastGesture();
+        resetBobber();
+      }
+
+      if (game.state !== 'idle') {
+        setHint('先等这一竿结束，再处理鱼获。');
+        return;
+      }
+
+      const item = selectNextCatch();
+      if (!item) {
+        setHint('木台上还没有鱼。先钓上一条再处理。');
+        updateCatchHud();
+        return;
+      }
+
+      game.processMode = true;
+      game.status = '处理';
+      game.pointerActive = false;
+      game.power = 0;
+      game.processExpectedDirection = 1;
+      hudEl.classList.remove('is-armed', 'is-bite');
+      resetMotionCastGesture();
+      resetBobber();
+      processingStation.group.visible = true;
+      clearProcessMarks();
+      layoutCaughtFish();
+      setCastCue(`${getProcessDirectionLabel(game.processExpectedDirection)} 1/${item.type.cuts}`, 'urgent');
+      setHint(`处理${item.type.name}：先向下切，再向上切，按提示上下交替处理鱼获。`);
+      vibrate(20);
+      updateCatchHud();
+    }
+
+    function exitProcessingMode() {
+      game.processMode = false;
+      game.processPointerActive = false;
+      game.selectedCatchIndex = -1;
+      game.status = '待机';
+      if (processingStation) {
+        processingStation.group.visible = false;
+      }
+      clearProcessMarks();
+      layoutCaughtFish();
+      setCastCue();
+      setHint('处理已退出。继续抛竿，或再次点处理。');
+      updateCatchHud();
+    }
+
+    function toggleProcessingMode() {
+      if (game.processMode) {
+        exitProcessingMode();
+      } else {
+        enterProcessingMode();
+      }
+    }
+
+    function addCutMark(cutIndex, requiredCuts, direction = 1) {
+      if (!processingStation) return;
+      const mark = new THREE.Mesh(
+        new THREE.BoxGeometry(0.74, 0.022, 0.035),
+        cutMarkMaterial
+      );
+      const progress = requiredCuts <= 1 ? 0.5 : cutIndex / (requiredCuts - 1);
+      mark.position.set(-0.28 + progress * 0.56, 0.13, -0.24 + progress * 0.48);
+      mark.rotation.y = direction > 0 ? 0.75 - progress * 0.35 : -0.75 + progress * 0.35;
+      processingStation.cuts.add(mark);
+    }
+
+    function addFillets(item) {
+      if (!processingStation) return;
+      for (let i = 0; i < Math.min(4, item.type.value + 1); i += 1) {
+        const fillet = new THREE.Mesh(
+          new THREE.BoxGeometry(0.34, 0.035, 0.13),
+          filletMaterial
+        );
+        fillet.position.set(-0.34 + i * 0.22, 0.15 + i * 0.005, 0.28 + (i % 2) * 0.08);
+        fillet.rotation.y = -0.25 + i * 0.18;
+        fillet.castShadow = true;
+        processingStation.cuts.add(fillet);
+      }
+    }
+
+    function completeProcessing(item) {
+      item.processed = true;
+      game.prepared += item.type.value;
+      game.status = '完成';
+      addFillets(item);
+      pulseStrikeFlash();
+      vibrate([25, 25, 70]);
+      setHint(`${item.type.name}处理完成，得到${item.type.value}份料理。`);
+      setCastCue(`+${item.type.value}料理`, 'urgent');
+      layoutCaughtFish();
+
+      window.setTimeout(() => {
+        if (!game.processMode) return;
+        const next = selectNextCatch();
+        clearProcessMarks();
+        if (next) {
+          game.processExpectedDirection = 1;
+          layoutCaughtFish();
+          setCastCue(`${getProcessDirectionLabel(game.processExpectedDirection)} 1/${next.type.cuts}`, 'urgent');
+          setHint(`下一条：${next.type.name}。重新开始，先向下切，再向上切。`);
+        } else {
+          exitProcessingMode();
+          setHint('鱼获已全部处理。继续钓鱼获得更多原料。');
+        }
+      }, 900);
+    }
+
+    function processCut(strength = 1, direction = 1) {
+      if (!game.processMode) return;
+      const item = getSelectedCatch();
+      if (!item) {
+        enterProcessingMode();
+        return;
+      }
+
+      if (direction !== game.processExpectedDirection) {
+        setCastCue(`${getProcessDirectionLabel(game.processExpectedDirection)} ${item.cuts + 1}/${item.type.cuts}`, 'urgent');
+        setHint(`切错方向了。当前应${getProcessDirectionLabel(game.processExpectedDirection)}，要上下交替处理。`);
+        vibrate(10);
+        return;
+      }
+
+      game.lastProcessCutAt = performance.now();
+
+      item.cuts += 1;
+      addCutMark(item.cuts - 1, item.type.cuts, direction);
+      processingStation.knife.rotation.z = (direction > 0 ? -1 : 1) * (0.32 + Math.min(0.42, strength * 0.16));
+      processingStation.knife.position.y = 0.1 + Math.min(0.1, strength * 0.035);
+      item.mesh.position.y += 0.04 + Math.min(0.06, strength * 0.02);
+      item.mesh.rotation.z = direction > 0 ? -0.18 : 0.18;
+      window.setTimeout(() => {
+        if (processingStation) {
+          processingStation.knife.rotation.z = 0;
+          processingStation.knife.position.y = 0.12;
+        }
+        if (!item.processed) {
+          item.mesh.position.y = 0.62;
+          item.mesh.rotation.z = -0.08;
+        }
+      }, 110);
+      vibrate(18);
+
+      if (item.cuts >= item.type.cuts) {
+        completeProcessing(item);
+      } else {
+        game.processExpectedDirection *= -1;
+        const nextDirection = getProcessDirectionLabel(game.processExpectedDirection);
+        setCastCue(`${nextDirection} ${item.cuts + 1}/${item.type.cuts}`, 'urgent');
+        setHint(`还需要${item.type.cuts - item.cuts}刀。下一刀请${nextDirection}，保持上下交替。`);
+      }
+      updateCatchHud();
+    }
+
+    function spawnFish() {
+      for (const item of game.fish) {
+        root.remove(item.mesh);
+        disposeObject3D(item.mesh);
+      }
+      game.fish = [];
+
+      for (let i = 0; i < 13; i += 1) {
+        const type = pickFishType();
+        const scale = type.minScale + Math.random() * (type.maxScale - type.minScale);
+        const fish = createFish(type, scale);
+        const lane = -5 - Math.random() * 24;
+        fish.position.set(-8 + Math.random() * 16, -0.52 - Math.random() * 0.65, lane);
+        fish.rotation.y = Math.random() > 0.5 ? 0 : Math.PI;
+        root.add(fish);
+        game.fish.push({
+          mesh: fish,
+          speed: 0.55 + Math.random() * 0.75,
+          dir: fish.rotation.y === 0 ? 1 : -1,
+          lane,
+          type,
+          scale,
+          phase: Math.random() * Math.PI * 2,
+          caught: false
+        });
+      }
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function setCylinderBetween(mesh, start, end, radiusScale = 1) {
+      cylinderMidpoint.addVectors(start, end).multiplyScalar(0.5);
+      cylinderDirection.subVectors(end, start);
+      const length = cylinderDirection.length();
+      if (length <= 0.0001) return;
+      mesh.position.copy(cylinderMidpoint);
+      mesh.scale.set(radiusScale, length, radiusScale);
+      mesh.quaternion.setFromUnitVectors(yAxis, cylinderDirection.normalize());
+    }
+
+    function updateRod() {
+      game.aim = lerp(game.aim, game.targetAim, 0.14);
+      rod.pull = lerp(rod.pull, game.state === 'charge' ? game.power : 0, 0.16);
+
+      const length = 3.72;
+      const yaw = game.aim;
+      const pitch = -0.48 - rod.pull * 0.92;
+      rod.tip.set(
+        rod.base.x + Math.sin(yaw) * length,
+        rod.base.y + Math.sin(-pitch) * length * 0.9,
+        rod.base.z - Math.cos(yaw) * Math.cos(pitch) * length
+      );
+
+      setCylinderBetween(rodMeshes.rod, rod.base, rod.tip);
+      handleEnd.set(rod.base.x - Math.sin(yaw) * 0.38, rod.base.y - 0.22, rod.base.z + Math.cos(yaw) * 0.38);
+      setCylinderBetween(rodMeshes.handle, handleEnd, rod.base, 1);
+
+      rodMeshes.reel.position.set(rod.base.x + Math.sin(yaw) * 0.2, rod.base.y - 0.06, rod.base.z - Math.cos(yaw) * 0.22);
+      rodMeshes.reel.rotation.set(0.2, yaw + Math.PI / 2, 0.1);
+    }
+
+    function updateLine() {
+      lineCurveMid.addVectors(rod.tip, bobber.position).multiplyScalar(0.5);
+      lineCurveMid.y += game.state === 'cast' ? 0.72 : 0.24;
+
+      for (let i = 0; i <= lineSegmentCount; i += 1) {
+        const t = i / lineSegmentCount;
+        const inv = 1 - t;
+        const a = inv * inv;
+        const b = 2 * inv * t;
+        const c = t * t;
+        const offset = i * 3;
+        linePositions[offset] = rod.tip.x * a + lineCurveMid.x * b + bobber.position.x * c;
+        linePositions[offset + 1] = rod.tip.y * a + lineCurveMid.y * b + bobber.position.y * c;
+        linePositions[offset + 2] = rod.tip.z * a + lineCurveMid.z * b + bobber.position.z * c;
+      }
+
+      rodMeshes.line.geometry.attributes.position.needsUpdate = true;
+    }
+
+    function updateCastPreview(elapsed) {
+      if (!castPreview) return;
+
+      const shouldShow = game.state === 'charge' && game.power > 0.08;
+      castPreview.group.visible = shouldShow;
+      if (!shouldShow) return;
+
+      const strength = clamp(game.power, 0.16, 1);
+      const yaw = game.aim;
+      const startX = rod.tip.x;
+      const startY = rod.tip.y;
+      const startZ = rod.tip.z;
+      const vx = Math.sin(yaw) * (1.6 + strength * 4.2);
+      const vy = 2.4 + strength * 4.9;
+      const vz = -Math.cos(yaw) * (5.8 + strength * 8.4);
+      const gravity = 8.6;
+      let landingX = startX;
+      let landingZ = startZ;
+      let lastValidIndex = previewSegmentCount;
+
+      for (let i = 0; i <= previewSegmentCount; i += 1) {
+        const t = (i / previewSegmentCount) * 1.7;
+        const x = startX + vx * t;
+        const y = startY + vy * t - 0.5 * gravity * t * t;
+        const z = startZ + vz * t;
+        const offset = i * 3;
+        previewPositions[offset] = x;
+        previewPositions[offset + 1] = Math.max(0.08, y);
+        previewPositions[offset + 2] = z;
+
+        if (y <= 0.13) {
+          landingX = x;
+          landingZ = z;
+          lastValidIndex = i;
+          for (let j = i + 1; j <= previewSegmentCount; j += 1) {
+            const targetOffset = j * 3;
+            previewPositions[targetOffset] = x;
+            previewPositions[targetOffset + 1] = 0.13;
+            previewPositions[targetOffset + 2] = z;
+          }
+          break;
+        }
+      }
+
+      if (lastValidIndex === previewSegmentCount) {
+        landingX = previewPositions[previewSegmentCount * 3];
+        landingZ = previewPositions[previewSegmentCount * 3 + 2];
+      }
+
+      castPreview.arc.geometry.attributes.position.needsUpdate = true;
+      castPreview.ring.position.set(landingX, 0.04, landingZ);
+      const pulse = 1 + Math.sin(elapsed * 6) * 0.08;
+      castPreview.ring.scale.setScalar(pulse * (0.86 + strength * 0.45));
+      previewLineMaterial.opacity = 0.34 + strength * 0.44;
+      previewRingMaterial.opacity = 0.28 + strength * 0.28;
+    }
+
+    function resetBobber() {
+      bobber.velocity.set(0, 0, 0);
+      bobber.landed = false;
+      bobber.tugPhase = 0;
+      bobber.position.copy(rod.tip).lerp(rod.base, 0.06);
+      bobber.position.y -= 0.22;
+    }
+
+    function resetGame() {
+      game.state = 'idle';
+      game.status = '待机';
+      game.power = 0;
+      game.targetAim = 0;
+      game.castCooldown = 0;
+      game.biteTimer = 0;
+      game.catchWindow = 0;
+      game.pointerActive = false;
+      game.processPointerActive = false;
+      game.lastCatchSummary = '';
+      hudEl.classList.remove('is-armed', 'is-bite');
+      setCastCue();
+      resetMotionCastGesture();
+      clearCaughtFish();
+      spawnFish();
+      resetBobber();
+      syncMotionButton();
+      setHint('按住画面下拉蓄力，松开抛竿。手机可启用陀螺仪后甩动抛竿。');
+    }
+
+    function setHint(text) {
+      hintEl.textContent = text;
+    }
+
+    function setSensor(text) {
+      sensorEl.textContent = text;
+    }
+
+    function vibrate(pattern) {
+      if ('vibrate' in navigator) {
+        navigator.vibrate(pattern);
+      }
+    }
+
+    function pulseStrikeFlash() {
+      strikeFlashEl.classList.remove('is-visible');
+      void strikeFlashEl.offsetWidth;
+      strikeFlashEl.classList.add('is-visible');
+    }
+
+    function setCastCue(text = '', kind = '') {
+      game.cueKind = kind;
+      castCueEl.textContent = text;
+      castCueEl.classList.toggle('is-visible', Boolean(text));
+      castCueEl.classList.toggle('is-urgent', kind === 'urgent');
+    }
+
+    function isFiniteNumber(value) {
+      return Number.isFinite(value);
+    }
+
+    function hasUsableMotionValue(values) {
+      return values.some((value) => isFiniteNumber(value) && Math.abs(value) > 0.001);
+    }
+
+    function captureMotionBaseline() {
+      game.baseBeta = game.currentBeta;
+      game.baseGamma = game.currentGamma;
+      game.baseAccel.x = game.currentAccel.x;
+      game.baseAccel.y = game.currentAccel.y;
+      game.baseAccel.z = game.currentAccel.z;
+      game.motionCalibrated = true;
+    }
+
+    function refreshSensorLabel(force = false) {
+      const now = performance.now();
+      if (!force && now - game.lastSensorLabelAt < 160) return;
+      game.lastSensorLabelAt = now;
+      const context = window.isSecureContext ? 'HTTPS' : 'HTTP';
+      setSensor(`${context} O${game.orientationSamples}/M${game.motionSamples}`);
+    }
+
+    function resetMotionCastGesture() {
+      game.motionPhase = 'idle';
+      game.motionArmedAt = 0;
+      game.motionLiftPeak = 0;
+      game.motionLiftSign = 0;
+      game.motionAccelAxis = '';
+      game.motionAccelSign = 0;
+      game.lastArmFeedbackAt = 0;
+    }
+
+    function getDominantAccelDelta(ax, ay, az) {
+      const values = [
+        { axis: 'x', value: ax - game.baseAccel.x },
+        { axis: 'y', value: ay - game.baseAccel.y },
+        { axis: 'z', value: az - game.baseAccel.z }
+      ];
+      values.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+      return values[0];
+    }
+
+    function armMotionGesture(now, power, betaSign = 0, accelDelta = null) {
+      if (game.state !== 'idle' && game.state !== 'charge') return;
+      const axis = accelDelta && Math.abs(accelDelta.value) > 0.8 ? accelDelta.axis : '';
+      const accelSign = axis ? Math.sign(accelDelta.value) : 0;
+      const normalizedPower = clamp(power, 0.08, 1);
+      if (normalizedPower < MOTION_ARM_POWER_MIN) return;
+
+      if (game.motionPhase !== 'armed') {
+        game.motionPhase = 'armed';
+        game.motionArmedAt = now;
+        game.motionLiftPeak = normalizedPower;
+        game.motionLiftSign = betaSign || game.motionLiftSign || 0;
+        game.motionAccelAxis = axis;
+        game.motionAccelSign = accelSign;
+      } else {
+        const reversingPitch = betaSign && game.motionLiftSign && betaSign !== game.motionLiftSign;
+        const reversingAccel = axis && axis === game.motionAccelAxis && accelSign && accelSign !== game.motionAccelSign;
+        if (reversingPitch || reversingAccel) return;
+        game.motionLiftPeak = Math.max(game.motionLiftPeak, normalizedPower);
+        if (!game.motionAccelAxis && axis) {
+          game.motionAccelAxis = axis;
+          game.motionAccelSign = accelSign;
+        }
+      }
+
+      game.state = 'charge';
+      game.status = '陀螺仪蓄力';
+      game.power = Math.max(game.power * 0.9, normalizedPower);
+      hudEl.classList.add('is-armed');
+      setCastCue('大幅下沉再甩', 'urgent');
+      if (now - game.lastArmFeedbackAt > 800) {
+        vibrate(18);
+        game.lastArmFeedbackAt = now;
+      }
+      setHint('已抬起蓄力。继续明显下沉手机，形成大幅反向角度后再快速前甩，才会抛竿。');
+    }
+
+    function tryMotionCast(now, betaRate, betaDelta, accelDelta, accelMagnitude) {
+      if (game.motionPhase !== 'armed' || game.state !== 'charge') return false;
+      const gestureAge = now - game.motionArmedAt;
+
+      if (gestureAge < MOTION_CAST_AGE_MIN) return false;
+      if (gestureAge > MOTION_CAST_AGE_MAX) {
+        resetMotionCastGesture();
+        game.state = 'idle';
+        game.status = '待机';
+        game.power = 0;
+        setHint('抛甩动作太慢。重新抬起蓄力后，快速下沉或前甩手机。');
+        return false;
+      }
+      if (game.motionLiftPeak < MOTION_ARM_POWER_MIN || game.power < MOTION_ARM_POWER_MIN) return false;
+
+      const reversePitchAmount = game.motionLiftSign !== 0 ? (-game.motionLiftSign * betaDelta) : 0;
+      const reverseByRate = game.motionLiftSign !== 0 && (-game.motionLiftSign * betaRate) > MOTION_CAST_RATE_MIN;
+      const reverseByAngle = reversePitchAmount > MOTION_CAST_PITCH_RETURN_MIN;
+      const deepDropReached = reversePitchAmount > MOTION_CAST_PITCH_DEEP_DROP_MIN;
+      const reverseByAccel = Boolean(
+        accelDelta
+        && game.motionAccelAxis
+        && accelDelta.axis === game.motionAccelAxis
+        && game.motionAccelSign
+        && Math.sign(accelDelta.value) === -game.motionAccelSign
+        && Math.abs(accelDelta.value) > MOTION_CAST_ACCEL_MIN
+      );
+      const castByAcceleration = reverseByAccel && accelMagnitude > MOTION_CAST_ACCEL_MIN;
+      const castByAngleAndDrop = reverseByAngle && accelMagnitude > 8.6;
+      const castByCommittedSwing = reverseByRate
+        && deepDropReached
+        && (castByAcceleration || castByAngleAndDrop || reversePitchAmount > MOTION_CAST_PITCH_DEEP_DROP_MIN + 8);
+
+      if (!castByCommittedSwing) return false;
+
+      const motionBoost = clamp((Math.abs(betaRate) - 120) / 420, 0, 0.22)
+        + clamp(accelMagnitude / 28, 0, 0.18);
+      game.lastMotionCast = now;
+      cast(clamp(Math.max(game.power, game.motionLiftPeak) + motionBoost, 0.18, 1));
+      return true;
+    }
+
+    function cast(power) {
+      if (game.state === 'cast' || game.castCooldown > 0) return;
+      const strength = clamp(power, 0.16, 1);
+      const yaw = game.aim;
+      bobber.position.copy(rod.tip);
+      bobber.velocity.set(
+        Math.sin(yaw) * (1.6 + strength * 4.2),
+        2.4 + strength * 4.9,
+        -Math.cos(yaw) * (5.8 + strength * 8.4)
+      );
+      bobber.landed = false;
+      game.state = 'cast';
+      game.status = '抛竿';
+      game.power = 0;
+      game.castCooldown = 0.55;
+      game.biteTimer = 1.8 + Math.random() * 2.5;
+      hudEl.classList.remove('is-armed', 'is-bite');
+      setCastCue();
+      vibrate(35);
+      resetMotionCastGesture();
+      setHint('浮漂落水后等待咬钩，咬钩时点击画面或上扬手机收杆。');
+    }
+
+    function createRipple(position, scale = 1) {
+      const geometry = new THREE.RingGeometry(0.08 * scale, 0.095 * scale, 42);
+      geometry.rotateX(-Math.PI / 2);
+      const ripple = new THREE.Mesh(geometry, splashMaterial.clone());
+      ripple.position.set(position.x, 0.025, position.z);
+      root.add(ripple);
+      game.ripples.push({ mesh: ripple, age: 0, scale });
+    }
+
+    function createSplash(position) {
+      createRipple(position, 2.2);
+      for (let i = 0; i < 22; i += 1) {
+        const drop = new THREE.Mesh(dropletGeometry, dropletMaterial);
+        drop.position.copy(position);
+        drop.position.y = 0.12;
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 0.9 + Math.random() * 1.6;
+        root.add(drop);
+        game.droplets.push({
+          mesh: drop,
+          velocity: new THREE.Vector3(Math.cos(angle) * speed, 1.1 + Math.random() * 1.6, Math.sin(angle) * speed),
+          age: 0
+        });
+      }
+    }
+
+    function triggerBite() {
+      if (game.state !== 'wait') return;
+      game.state = 'bite';
+      game.status = '咬钩';
+      game.catchWindow = 1.65;
+      createRipple(bobber.position, 1.4);
+      createRipple(bobber.position, 2.7);
+      hudEl.classList.add('is-bite');
+      setCastCue('收杆', 'urgent');
+      pulseStrikeFlash();
+      vibrate([70, 45, 110]);
+      setHint('咬钩了，点击画面或快速上扬手机收杆。');
+    }
+
+    function catchFish() {
+      if (game.state !== 'bite') return;
+      game.state = 'caught';
+      game.status = '上钩';
+      game.catchWindow = 0;
+      game.biteTimer = 0.9;
+      createSplash(bobber.position);
+      hudEl.classList.remove('is-bite');
+      setCastCue();
+      vibrate([35, 25, 55]);
+
+      let nearest = null;
+      let nearestDistance = Infinity;
+      for (const fish of game.fish) {
+        if (fish.caught) continue;
+        const distance = fish.mesh.position.distanceTo(bobber.position);
+        if (distance < nearestDistance) {
+          nearest = fish;
+          nearestDistance = distance;
+        }
+      }
+      if (nearest) {
+        nearest.caught = true;
+        nearest.mesh.visible = false;
+      }
+      const caughtType = nearest ? nearest.type : pickFishType();
+      const caughtScale = nearest ? nearest.scale : caughtType.minScale;
+      const caughtItem = addCaughtFish(caughtType, caughtScale);
+      game.score += caughtType.value;
+      scoreEl.textContent = String(game.score);
+      game.lastCatchSummary = `钓到${caughtType.name}，${caughtItem.weight}斤。鱼已经放到木台上，可点“处理”切成料理。`;
+      setCastCue(`${caughtType.name}入篓`, 'urgent');
+      setHint(game.lastCatchSummary);
+    }
+
+    function missFish() {
+      if (game.state !== 'bite') return;
+      game.state = 'idle';
+      game.status = '脱钩';
+      game.power = 0;
+      game.catchWindow = 0;
+      resetBobber();
+      hudEl.classList.remove('is-bite');
+      setCastCue();
+      vibrate(25);
+      setHint('脱钩了。重新蓄力抛竿。');
+    }
+
+    function updateBobber(delta, elapsed) {
+      if (game.state === 'idle' || game.state === 'charge') {
+        resetBobber();
+      }
+
+      if (game.state === 'cast') {
+        bobber.velocity.y -= 8.6 * delta;
+        bobber.velocity.multiplyScalar(1 - delta * 0.02);
+        bobber.position.addScaledVector(bobber.velocity, delta);
+        if (bobber.position.y <= 0.13) {
+          bobber.position.y = 0.13;
+          bobber.velocity.set(0, 0, 0);
+          bobber.landed = true;
+          game.state = 'wait';
+          game.status = '等待';
+          createSplash(bobber.position);
+        }
+      }
+
+      if (game.state === 'wait') {
+        game.biteTimer -= delta;
+        bobber.position.y = 0.13 + Math.sin(elapsed * 3.2) * 0.035;
+        bobber.tugPhase += delta;
+        if (game.biteTimer <= 0) {
+          triggerBite();
+        }
+      }
+
+      if (game.state === 'bite') {
+        game.catchWindow -= delta;
+        bobber.position.y = 0.12 + Math.sin(elapsed * 18) * 0.08;
+        bobber.position.x += Math.sin(elapsed * 15) * 0.006;
+        if (Math.sin(elapsed * 24) > 0.86) {
+          createRipple(bobber.position, 0.7);
+        }
+        if (game.catchWindow <= 0) {
+          missFish();
+        }
+      }
+
+      if (game.state === 'caught') {
+        game.biteTimer -= delta;
+        bobber.position.lerp(rod.tip, 0.06);
+        if (game.biteTimer <= 0) {
+          game.state = 'idle';
+          game.status = '待机';
+          resetBobber();
+          setCastCue();
+          setHint(game.lastCatchSummary || '继续蓄力抛竿，左右倾斜或拖动可以调整落点。');
+        }
+      }
+
+      bobberGroup.position.copy(bobber.position);
+      bobberGroup.rotation.y += delta * 1.8;
+    }
+
+    function updateFish(delta, elapsed) {
+      for (const fish of game.fish) {
+        if (fish.caught) continue;
+        fish.phase += delta * 3;
+        fish.mesh.position.x += fish.speed * fish.dir * delta;
+        fish.mesh.position.z = fish.lane + Math.sin(elapsed * 0.8 + fish.phase) * 0.55;
+        fish.mesh.position.y = -0.64 + Math.sin(elapsed * 1.7 + fish.phase) * 0.08;
+        fish.mesh.rotation.z = Math.sin(elapsed * 4 + fish.phase) * 0.05;
+
+        if (fish.mesh.position.x > 9) {
+          fish.dir = -1;
+          fish.mesh.rotation.y = Math.PI;
+        }
+        if (fish.mesh.position.x < -9) {
+          fish.dir = 1;
+          fish.mesh.rotation.y = 0;
+        }
+
+        if (game.state === 'wait' && fish.mesh.position.distanceTo(bobber.position) < 1.2) {
+          game.biteTimer = Math.min(game.biteTimer, 0.28);
+        }
+      }
+    }
+
+    function updateWater(elapsed) {
+      const water = waterMesh;
+      if (!water) return;
+      const positions = water.geometry.attributes.position;
+      for (let i = 0; i < positions.count; i += 1) {
+        const x = positions.getX(i);
+        const z = positions.getZ(i);
+        const wave = Math.sin(x * 0.72 + elapsed * 1.2) * 0.045 + Math.cos(z * 0.46 + elapsed * 0.92) * 0.035;
+        positions.setY(i, wave);
+      }
+      positions.needsUpdate = true;
+      waterNormalFrame += 1;
+      if (waterNormalFrame % 6 === 0) {
+        water.geometry.computeVertexNormals();
+      }
+    }
+
+    function updateEffects(delta) {
+      for (const ripple of game.ripples) {
+        ripple.age += delta;
+        const scale = ripple.scale * (1 + ripple.age * 3.6);
+        ripple.mesh.scale.setScalar(scale);
+        ripple.mesh.material.opacity = Math.max(0, 0.68 * (1 - ripple.age / 1.25));
+      }
+      game.ripples = game.ripples.filter((ripple) => {
+        if (ripple.age <= 1.25) return true;
+        ripple.mesh.geometry.dispose();
+        ripple.mesh.material.dispose();
+        root.remove(ripple.mesh);
+        return false;
+      });
+
+      for (const drop of game.droplets) {
+        drop.age += delta;
+        drop.velocity.y -= 6.4 * delta;
+        drop.mesh.position.addScaledVector(drop.velocity, delta);
+        drop.mesh.scale.setScalar(Math.max(0.18, 1 - drop.age * 1.5));
+      }
+      game.droplets = game.droplets.filter((drop) => {
+        if (drop.age <= 0.7 && drop.mesh.position.y > -0.08) return true;
+        root.remove(drop.mesh);
+        return false;
+      });
+    }
+
+    function updateCamera(delta) {
+      if (game.processMode) {
+        cameraTarget.set(2.25, 0.65, 5.55);
+        cameraDesired.set(2.25, window.innerWidth < 640 ? 3.7 : 3.25, window.innerWidth < 640 ? 8.8 : 8.0);
+        camera.position.lerp(cameraDesired, 1 - Math.pow(0.001, delta));
+        camera.lookAt(cameraTarget);
+        return;
+      }
+
+      cameraTarget.set(
+        clamp(bobber.position.x * 0.18, -1.4, 1.4),
+        1.2,
+        game.state === 'cast' || game.state === 'wait' || game.state === 'bite' ? -5.2 : -2.4
+      );
+      cameraDesired.set(
+        clamp(bobber.position.x * 0.14, -1.1, 1.1),
+        window.innerWidth < 640 ? 5.7 : 5.2,
+        window.innerWidth < 640 ? 13.7 : 12.2
+      );
+      camera.position.lerp(cameraDesired, 1 - Math.pow(0.001, delta));
+      camera.lookAt(cameraTarget);
+    }
+
+    function updateHud() {
+      stateEl.textContent = game.status;
+      powerEl.textContent = `${Math.round(game.power * 100)}%`;
+      aimEl.textContent = `${Math.round(THREE.MathUtils.radToDeg(game.aim))}°`;
+      powerBar.style.setProperty('--power', game.power.toFixed(3));
+      updateCatchHud();
+    }
+
+    function animate() {
+      const delta = Math.min(clock.getDelta(), 0.034);
+      const elapsed = clock.elapsedTime;
+      game.castCooldown = Math.max(0, game.castCooldown - delta);
+
+      updateRod();
+      updateBobber(delta, elapsed);
+      updateLine();
+      updateCastPreview(elapsed);
+      updateFish(delta, elapsed);
+      updateWater(elapsed);
+      updateEffects(delta);
+      updateCamera(delta);
+      updateHud();
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    function resize() {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setPixelRatio(getRenderPixelRatio());
+      renderer.setSize(width, height, false);
+    }
+
+    function startCharge(clientX, clientY) {
+      if (game.state === 'bite') {
+        catchFish();
+        return;
+      }
+      if (game.state !== 'idle' && game.state !== 'charge') return;
+      game.pointerActive = true;
+      game.chargeStartY = clientY;
+      game.chargeStartX = clientX;
+      game.state = 'charge';
+      game.status = '蓄力';
+      game.power = Math.max(game.power, 0.08);
+      hudEl.classList.add('is-armed');
+      setCastCue('拉开蓄力');
+      setHint('向下拖动增加蓄力，观察落点圈，左右拖动调整抛竿方向。');
+    }
+
+    function updateCharge(clientX, clientY) {
+      if (!game.pointerActive || game.state !== 'charge') return;
+      const dy = clientY - game.chargeStartY;
+      const dx = clientX - game.chargeStartX;
+      game.power = clamp(dy / Math.max(180, window.innerHeight * 0.24), 0, 1);
+      game.targetAim = clamp(dx / Math.max(160, window.innerWidth * 0.24), -1, 1) * 0.48;
+      if (game.power > 0.42) {
+        setCastCue('松手抛竿', 'urgent');
+      }
+    }
+
+    function endCharge() {
+      if (!game.pointerActive) return;
+      game.pointerActive = false;
+      if (game.power > 0.14) {
+        cast(game.power);
+      } else {
+        game.state = 'idle';
+        game.status = '待机';
+        game.power = 0;
+        hudEl.classList.remove('is-armed');
+        setCastCue();
+        setHint('蓄力不足。下拉更长距离后松开。');
+      }
+    }
+
+    function handleOrientation(event) {
+      if (!game.motionEnabled) return;
+      const now = performance.now();
+
+      const beta = isFiniteNumber(event.beta) ? event.beta : null;
+      const gamma = isFiniteNumber(event.gamma) ? event.gamma : null;
+      if (beta === null && gamma === null) {
+        refreshSensorLabel(true);
+        return;
+      }
+
+      game.orientationSamples += 1;
+      if (beta !== null) game.currentBeta = beta;
+      if (gamma !== null) game.currentGamma = gamma;
+      if (!game.motionCalibrated) {
+        captureMotionBaseline();
+      }
+
+      if (game.processMode) {
+        refreshSensorLabel();
+        return;
+      }
+
+      const betaDelta = game.currentBeta - game.baseBeta;
+      const gammaDelta = game.currentGamma - game.baseGamma;
+      const pitchPull = Math.max(0, Math.abs(betaDelta) - 6);
+      game.targetAim = clamp(gammaDelta / 28, -1, 1) * 0.52;
+
+      if ((game.state === 'idle' || game.state === 'charge') && pitchPull > MOTION_ARM_PITCH_MIN) {
+        armMotionGesture(now, clamp(pitchPull / 38, 0.08, 1), Math.sign(betaDelta), null);
+      }
+      refreshSensorLabel();
+    }
+
+    function handleMotion(event) {
+      if (!game.motionEnabled) return;
+
+      const now = performance.now();
+      const rotation = event.rotationRate || {};
+      const betaRate = isFiniteNumber(rotation.beta) ? rotation.beta : 0;
+      const acc = event.accelerationIncludingGravity || {};
+      const ax = isFiniteNumber(acc.x) ? acc.x : 0;
+      const ay = isFiniteNumber(acc.y) ? acc.y : 0;
+      const az = isFiniteNumber(acc.z) ? acc.z : 0;
+      const hasAccel = hasUsableMotionValue([ax, ay, az]);
+
+      game.motionSamples += 1;
+      if (hasAccel) {
+        game.currentAccel.x = ax;
+        game.currentAccel.y = ay;
+        game.currentAccel.z = az;
+        if (!game.motionCalibrated) {
+          captureMotionBaseline();
+        }
+      }
+
+      const accelDelta = hasAccel ? getDominantAccelDelta(ax, ay, az) : null;
+      const accelMagnitude = hasAccel && accelDelta ? Math.abs(accelDelta.value) : 0;
+      const betaDelta = game.currentBeta - game.baseBeta;
+      const accelAim = ax - game.baseAccel.x;
+      const accelPull = Math.max(
+        Math.abs(ay - game.baseAccel.y) * 0.13,
+        Math.abs(az - game.baseAccel.z) * 0.11
+      );
+      if (hasAccel && game.orientationSamples === 0) {
+        game.targetAim = clamp(accelAim / 5.5, -1, 1) * 0.52;
+      }
+
+      if (game.processMode) {
+        const directionFromRate = Math.abs(betaRate) > 140 ? (betaRate < 0 ? 1 : -1) : 0;
+        const directionFromAccel = accelDelta && Math.abs(accelDelta.value) > 7 ? (accelDelta.value > 0 ? 1 : -1) : 0;
+        const cutDirection = directionFromRate || directionFromAccel;
+        const cuttingMotion = Boolean(cutDirection) && (Math.abs(betaRate) > 140 || accelMagnitude > 7);
+        if (cuttingMotion && now - game.lastProcessCutAt > 360) {
+          processCut(clamp(Math.max(Math.abs(betaRate) / 180, accelMagnitude / 8), 0.6, 2), cutDirection);
+        }
+        refreshSensorLabel();
+        return;
+      }
+
+      const lift = -(ay || 0) + (az || 0) * 0.24;
+      if (game.state === 'bite' && (betaRate > 95 || lift > 12)) {
+        catchFish();
+        return;
+      }
+
+      if (now - game.lastMotionCast > 650 && tryMotionCast(now, betaRate, betaDelta, accelDelta, accelMagnitude)) {
+        refreshSensorLabel();
+        return;
+      }
+
+      if (
+        game.orientationSamples === 0
+        && (game.state === 'idle' || game.state === 'charge')
+        && accelPull > MOTION_ARM_ACCEL_MIN
+      ) {
+        armMotionGesture(now, clamp(accelPull, 0.08, 1), Math.sign(betaDelta), accelDelta);
+      }
+      refreshSensorLabel();
+    }
+
+    async function enableMotion() {
+      if (game.motionTogglePending || game.motionEnabled) return;
+      game.motionTogglePending = true;
+      syncMotionButton();
+      if (!window.isSecureContext) {
+        setSensor('需 HTTPS');
+        setHint('当前是 HTTP 页面，手机浏览器通常会屏蔽陀螺仪。请用 demo.py 启动 HTTPS 后打开 https://手机地址:8443/demo.html。');
+        game.motionTogglePending = false;
+        syncMotionButton();
+        return;
+      }
+
+      if (typeof DeviceOrientationEvent === 'undefined' && typeof DeviceMotionEvent === 'undefined') {
+        setSensor('不支持');
+        setHint('当前浏览器没有运动传感器接口。可用触摸拖动游玩。');
+        game.motionTogglePending = false;
+        syncMotionButton();
+        return;
+      }
+
+      try {
+        const permissionTasks = [];
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          permissionTasks.push(DeviceOrientationEvent.requestPermission());
+        }
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+          permissionTasks.push(DeviceMotionEvent.requestPermission());
+        }
+
+        const permissions = await Promise.all(permissionTasks);
+        if (permissions.some((result) => result !== 'granted')) {
+          setSensor('被拒绝');
+          setHint('传感器权限未开启。请刷新页面后点击“陀螺仪”，并在系统弹窗中允许。');
+          return;
+        }
+
+        window.removeEventListener('deviceorientation', handleOrientation, true);
+        window.removeEventListener('devicemotion', handleMotion, true);
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        window.addEventListener('devicemotion', handleMotion, true);
+        game.motionEnabled = true;
+        game.motionCalibrated = false;
+        game.orientationSamples = 0;
+        game.motionSamples = 0;
+        resetMotionCastGesture();
+        syncMotionButton();
+        setSensor('等待数据');
+        setHint('已开启传感器。保持握持姿势点“校准”，然后左右倾斜或大幅甩动手机；再次点击按钮可关闭。');
+        window.setTimeout(() => {
+          if (game.motionEnabled && game.orientationSamples === 0 && game.motionSamples === 0) {
+            setSensor('无事件');
+            setHint('权限已请求，但浏览器没有回传传感器事件。请确认使用 HTTPS 页面，并检查系统浏览器的运动传感器权限。');
+          }
+        }, 1400);
+      } catch (error) {
+        setSensor('失败');
+        setHint('浏览器拒绝或不支持运动传感器。请用手机浏览器打开 HTTPS 地址后重试。');
+      } finally {
+        game.motionTogglePending = false;
+        syncMotionButton();
+      }
+    }
+
+    function disableMotion() {
+      game.motionTogglePending = false;
+      window.removeEventListener('deviceorientation', handleOrientation, true);
+      window.removeEventListener('devicemotion', handleMotion, true);
+      game.motionEnabled = false;
+      game.motionCalibrated = false;
+      game.orientationSamples = 0;
+      game.motionSamples = 0;
+      resetMotionCastGesture();
+      syncMotionButton();
+      setSensor('已关闭');
+      if (game.state === 'charge' && !game.pointerActive) {
+        resetChargeState();
+      }
+      setHint('陀螺仪已关闭。可用触摸拖拽继续游玩。');
+    }
+
+    async function toggleMotion() {
+      if (game.motionTogglePending) return;
+      if (game.motionEnabled) {
+        disableMotion();
+      } else {
+        await enableMotion();
+      }
+    }
+
+    function calibrateMotion() {
+      captureMotionBaseline();
+      resetMotionCastGesture();
+      game.targetAim = 0;
+      setSensor('已校准');
+      setHint('已校准。左右倾斜瞄准，后仰蓄力，快速甩动手机抛竿。');
+    }
+
+    function startProcessSwipe(clientX, clientY) {
+      game.processPointerActive = true;
+      game.processStartX = clientX;
+      game.processStartY = clientY;
+      game.processStartAt = performance.now();
+      const item = getSelectedCatch();
+      if (item) {
+        setCastCue(`${getProcessDirectionLabel(game.processExpectedDirection)} ${item.cuts + 1}/${item.type.cuts}`, 'urgent');
+      }
+    }
+
+    function endProcessSwipe(clientX, clientY) {
+      if (!game.processPointerActive) return;
+      game.processPointerActive = false;
+
+      const dx = clientX - game.processStartX;
+      const dy = clientY - game.processStartY;
+      const elapsed = performance.now() - game.processStartAt;
+      const verticalSlice = Math.abs(dy) > PROCESS_STROKE_DISTANCE
+        && Math.abs(dy) > Math.abs(dx) * 1.15
+        && elapsed < PROCESS_STROKE_TIME_MAX;
+      if (verticalSlice) {
+        processCut(clamp(Math.abs(dy) / 180, 0.5, 1.8), dy > 0 ? 1 : -1);
+      } else {
+        setHint('处理鱼时要快速上下划动，按提示完成向下切、向上切。');
+      }
+    }
+
+    function projectPointerToWater(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+      const origin = raycaster.ray.origin;
+      const direction = raycaster.ray.direction;
+      const distance = -origin.y / direction.y;
+      return origin.clone().addScaledVector(direction, distance);
+    }
+
+    touchZone.addEventListener('pointerdown', (event) => {
+      touchZone.setPointerCapture(event.pointerId);
+      if (game.processMode) {
+        startProcessSwipe(event.clientX, event.clientY);
+        return;
+      }
+      startCharge(event.clientX, event.clientY);
+    });
+
+    touchZone.addEventListener('pointermove', (event) => {
+      if (game.processMode) return;
+      updateCharge(event.clientX, event.clientY);
+    });
+
+    touchZone.addEventListener('pointerup', (event) => {
+      touchZone.releasePointerCapture(event.pointerId);
+      if (game.processMode) {
+        endProcessSwipe(event.clientX, event.clientY);
+        return;
+      }
+      endCharge();
+    });
+
+    touchZone.addEventListener('pointercancel', () => {
+      game.pointerActive = false;
+      game.processPointerActive = false;
+      if (game.state === 'charge') {
+        resetChargeState();
+      }
+    });
+
+    touchZone.addEventListener('click', (event) => {
+      if (game.state === 'bite') {
+        catchFish();
+        return;
+      }
+      if (game.processMode) {
+        const item = getSelectedCatch();
+        if (item) {
+          setHint(`当前正在处理${item.type.name}，请${getProcessDirectionLabel(game.processExpectedDirection)}完成这一刀。`);
+        }
+        return;
+      }
+      const point = projectPointerToWater(event.clientX, event.clientY);
+      if (Number.isFinite(point.x)) {
+        game.targetAim = clamp(Math.atan2(point.x - rod.base.x, rod.base.z - point.z), -0.52, 0.52);
+      }
+    });
+
+    motionBtn.addEventListener('click', toggleMotion);
+    calibrateBtn.addEventListener('click', calibrateMotion);
+    processBtn.addEventListener('click', toggleProcessingMode);
+    resetBtn.addEventListener('click', () => {
+      game.score = 0;
+      scoreEl.textContent = '0';
+      resetGame();
+    });
+
+    syncMotionButton();
+    window.addEventListener('resize', resize);
+    window.addEventListener('contextmenu', (event) => event.preventDefault());
+
+    createWorld();
+    resize();
+    resetGame();
+    animate();
+  </script>
+</body>
+</html>
