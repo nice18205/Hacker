@@ -1,0 +1,9 @@
+{
+  "name": "fb_8mb",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal AI badminton demo under 6MB.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>面"比"者 羽毛球 Lite</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <p class="eyebrow">FB_8MB</p>
+        <h1>面"比"者 羽毛球</h1>
+        <p class="subtitle">极简 AI 对战版，仅保留单屏基础来回球体验。</p>
+      </header>
+
+      <main class="layout">
+        <section class="panel hud-panel">
+          <div class="score-row">
+            <div class="score-card self">
+              <span>自己</span>
+              <strong id="playerScore">0</strong>
+            </div>
+            <div class="score-card ai">
+              <span>AI</span>
+              <strong id="aiScore">0</strong>
+            </div>
+          </div>
+
+          <div class="control-grid">
+            <label class="field">
+              <span>难度</span>
+              <select id="difficultySelect">
+                <option value="easy">简易</option>
+                <option value="normal" selected>普通</option>
+                <option value="hard">困难</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>胜利分</span>
+              <input id="targetScoreInput" type="number" min="3" max="15" value="7" />
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="startButton" class="primary-button">开始对战</button>
+            <button id="hitButton" class="secondary-button" disabled>挥拍 / 回球</button>
+            <button id="restartButton" class="secondary-button">重开</button>
+          </div>
+
+          <div class="status-box">
+            <p class="status-title">当前状态</p>
+            <h2 id="statusText">点击开始后，你先发球。</h2>
+            <p id="detailText">球进入红色判定环时，点击“挥拍 / 回球”或按空格即可。</p>
+          </div>
+
+          <div class="tips">
+            <div class="tip-card">
+              <strong>基础规则</strong>
+              <span>你先发球，AI 只做简单延迟与概率回球。</span>
+            </div>
+            <div class="tip-card">
+              <strong>操作方式</strong>
+              <span>按钮、空格键、触碰球场都可以出手。</span>
+            </div>
+            <div class="tip-card">
+              <strong>目标</strong>
+              <span>先到设定分数的一方获胜。</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel arena-panel">
+          <div class="arena-header">
+            <span class="badge">单屏 AI 模式</span>
+            <span id="rallyCount">回合 0</span>
+          </div>
+
+          <div id="arena" class="arena" tabindex="0" aria-label="AI 对战场地">
+            <div class="arena-glow"></div>
+            <div class="lane-guide"></div>
+            <div id="hitZone" class="hit-zone"></div>
+            <div id="readyBall" class="ready-ball hidden"></div>
+            <div id="ball" class="ball hidden"></div>
+            <div id="overlay" class="overlay hidden">
+              <p id="overlayText">你先发球</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>
